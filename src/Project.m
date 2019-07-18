@@ -172,6 +172,11 @@ classdef Project < handle
         % 1. Otherwise it is initialised to 0.
         committed
         
+        % Flag whether this is a Brainstorm project
+        isBrainstormProject
+        
+        % List of files coming from Brainstorm to be processed
+        brainstormFiles
     end
     
     properties(SetAccess=private, GetAccess=private)
@@ -260,6 +265,7 @@ classdef Project < handle
             self.params = params;
             self.vParams = vParams;
             self = self.createRatingStructure();
+            self.isBrainstormProject = 0;
         end
     end
     
@@ -1146,21 +1152,21 @@ classdef Project < handle
                     end
                     if ~isempty(autStruct.params.EOGRegressionParams)
                         bidsStruct.ArtifactCorrection.EOGRegression.Used = 'Yes';
-                        bidsStruct.ArtifactCorrection.EOGRegression.ToolboxReference = 'Parra, Lucas C., Clay D. Spence, Adam D. Gerson, and Paul Sajda. 2005. “Recipes for the Linear Analysis of EEG.” NeuroImage 28 (2): 326–41';
+                        bidsStruct.ArtifactCorrection.EOGRegression.ToolboxReference = 'Parra, Lucas C., Clay D. Spence, Adam D. Gerson, and Paul Sajda. 2005. “Recipes for the Linear Analysis of EEG.�? NeuroImage 28 (2): 326–41';
                     end
                     
                     if ~isempty(autStruct.params.MARAParams)
                         bidsStruct.ArtifactCorrection.MARA.RemovedBadICs = autStruct.mara.ICARejected;
                         bidsStruct.ArtifactCorrection.MARA.PosteriorArtefactProbability = autStruct.mara.postArtefactProb;
                         bidsStruct.ArtifactCorrection.MARA.RetainedVariance = autStruct.mara.retainedVariance;
-                        bidsStruct.ArtifactCorrection.MARA.ToolboxReference = 'Winkler, Irene, Stefan Haufe, and Michael Tangermann. 2011. “Automatic Classification of Artifactual ICA-Components for Artifact Removal in EEG Signals.” Behavioral and Brain Functions: BBF 7 (August): 30';
+                        bidsStruct.ArtifactCorrection.MARA.ToolboxReference = 'Winkler, Irene, Stefan Haufe, and Michael Tangermann. 2011. “Automatic Classification of Artifactual ICA-Components for Artifact Removal in EEG Signals.�? Behavioral and Brain Functions: BBF 7 (August): 30';
                     end
                     
                     if ~isempty(autStruct.params.RPCAParams)
                         bidsStruct.ArtifactCorrection.RPCA.RPCALambda = autStruct.rpca.lambda;
                         bidsStruct.ArtifactCorrection.RPCA.Tolerance = autStruct.rpca.tol;
                         bidsStruct.ArtifactCorrection.RPCA.MaxIterations = autStruct.rpca.maxIter;
-                        bidsStruct.ArtifactCorrection.RPCA.ToolboxReference = 'Lin, Zhouchen, Minming Chen, and Yi Ma. 2010. “The Augmented Lagrange Multiplier Method for Exact Recovery of Corrupted Low-Rank Matrices.” arXiv [math.OC]. arXiv. http://arxiv.org/abs/1009.5055';
+                        bidsStruct.ArtifactCorrection.RPCA.ToolboxReference = 'Lin, Zhouchen, Minming Chen, and Yi Ma. 2010. “The Augmented Lagrange Multiplier Method for Exact Recovery of Corrupted Low-Rank Matrices.�? arXiv [math.OC]. arXiv. http://arxiv.org/abs/1009.5055';
                     end
                     bidsStruct.QualityRating.QualityThresholds.OverallHighAmplitudeThreshold = autStruct.qualityThresholds.overallThresh;
                     bidsStruct.QualityRating.QualityThresholds.TimepointsHighVarianceThreshold = autStruct.qualityThresholds.timeThresh;
@@ -1232,7 +1238,19 @@ classdef Project < handle
         
         function list = listPreprocessedSubjects(self)
             % List all folders in the resultFolder
+            self.isBrainstormProject = 0;
             list = self.listSubjects(self.resultFolder);
+            self.isBrainstormProject = 1;
+        end
+        
+        function setBrainstormFiles(self, sInputs)
+            if isempty(brainstormFiles)
+                brainstormFiles = sInputs;
+            else
+                nInputs = length(sInputs);
+                brainstormFiles(end + 1:end + nInputs) = sInputs;
+            end
+            isBrainstormProject = 1;
         end
         
     end
@@ -1547,6 +1565,93 @@ classdef Project < handle
             guidata(handle.mainGUI, handle);
             mainGUI();
         end
+        
+        function subjects = listSubjects(self, rootFolder)
+            % Return the    list of subjects (dirs) in the folder
+            % rootFolder    the folder in which subjects are looked for
+            
+            if self.isBrainstormProject
+                subjects = unique({self.brainstormFiles.SubjectName}');
+            else
+                subs = dir(rootFolder);
+                isub = [subs(:).isdir];
+                subjects = {subs(isub).name}';
+                subjects(ismember(subjects,{'.','..'})) = [];
+            end
+        end
+        
+        function modified = isFolderChanged(self, folder, folder_counts, ...
+                nBlocks, ext, allSteps)
+            % Return true if the number of files or folders in the
+            % folder are changed since the last update. 
+            % NOTE: This is a very naive way of checking if changes
+            % happened. There could be changes in files, but not number of 
+            % files, which are not detected. Use with cautious.
+            slash = filesep;
+            modified = false;
+            subjects = self.listSubjects(folder);
+            nSubject = length(subjects);
+            if ~isempty(startsWith(subjects, 'sub-')) && all(startsWith(subjects, 'sub-'))
+                isBIDS = 1;
+            else
+                isBIDS = 0;
+            end
+
+            if( ~ isempty(folder_counts) )
+                if( nSubject ~= folder_counts )
+                    modified = true;
+                    return;
+                end
+            end
+
+            nBlock = 0;
+            for i = 1:nSubject
+                subject = subjects{i};
+                if isBIDS
+                    sessOrEEG = self.listSubjects([folder subject]);
+                    if ~isempty(startsWith(sessOrEEG, 'ses-')) && all(startsWith(sessOrEEG, 'ses-'))
+                        for sesIdx = 1:length(sessOrEEG)
+                            sessFile = sessOrEEG{sesIdx};
+                            eegFold = [folder subject slash sessFile slash 'eeg' slash];
+                            if exist(eegFold, 'dir')
+                                files = dir([eegFold ,'*' ,ext]);
+                                nBlock = nBlock + length(files);
+                            end
+                        end
+                    elseif ~isempty(startsWith(sessOrEEG, 'ses-')) && any(startsWith(sessOrEEG, 'eeg'))
+                        eegFold = [folder subject slash 'eeg' slash];
+                        if exist(eegFold, 'dir')
+                            files = dir([eegFold ,'*' ,ext]);
+                            nBlock = nBlock + length(files);
+                        end
+                    else
+                        files = dir([folder, subject ,'/*' ,ext]);
+                        nBlock = nBlock + length(files);
+                    end
+                else
+                    files = dir([folder, subject ,'/*' ,ext]);
+                    nBlock = nBlock + length(files);
+                end
+            end
+
+            % NOTE: Very risky. The assumption is that for each result 
+            % file, there is a corresponding reduced file as well.
+            if isempty(folder_counts) % Case of results folder
+                if allSteps
+                    if( nBlock / 3 ~= nBlocks)
+                        modified = true;
+                    end
+                else
+                    if( nBlock / 2 ~= nBlocks)
+                        modified = true;
+                    end
+                end
+            else
+                if(nBlock ~= nBlocks)
+                    modified = true;
+                end
+            end
+        end
     end
     
     %% Public static methods
@@ -1591,16 +1696,6 @@ classdef Project < handle
             end
         end
         
-        function subjects = listSubjects(rootFolder)
-            % Return the    list of subjects (dirs) in the folder
-            % rootFolder    the folder in which subjects are looked for
-            
-            subs = dir(rootFolder);
-            isub = [subs(:).isdir];
-            subjects = {subs(isub).name}';
-            subjects(ismember(subjects,{'.','..'})) = [];
-        end
-        
         function files = dirNotHiddens(folder)
             % Return the list of files in the folder. Exclude the hidden
             % files
@@ -1609,79 +1704,6 @@ classdef Project < handle
             files = dir(folder);
             idx = ~startsWith({files.name}, '.');
             files = files(idx);
-        end
-        
-        function modified = isFolderChanged(folder, folder_counts, ...
-                nBlocks, ext, allSteps)
-            % Return true if the number of files or folders in the
-            % folder are changed since the last update. 
-            % NOTE: This is a very naive way of checking if changes
-            % happened. There could be changes in files, but not number of 
-            % files, which are not detected. Use with cautious.
-            slash = filesep;
-            modified = false;
-            subjects = Project.listSubjects(folder);
-            nSubject = length(subjects);
-            if ~isempty(startsWith(subjects, 'sub-')) && all(startsWith(subjects, 'sub-'))
-                isBIDS = 1;
-            else
-                isBIDS = 0;
-            end
-
-            if( ~ isempty(folder_counts) )
-                if( nSubject ~= folder_counts )
-                    modified = true;
-                    return;
-                end
-            end
-
-            nBlock = 0;
-            for i = 1:nSubject
-                subject = subjects{i};
-                if isBIDS
-                    sessOrEEG = Project.listSubjects([folder subject]);
-                    if ~isempty(startsWith(sessOrEEG, 'ses-')) && all(startsWith(sessOrEEG, 'ses-'))
-                        for sesIdx = 1:length(sessOrEEG)
-                            sessFile = sessOrEEG{sesIdx};
-                            eegFold = [folder subject slash sessFile slash 'eeg' slash];
-                            if exist(eegFold, 'dir')
-                                files = dir([eegFold ,'*' ,ext]);
-                                nBlock = nBlock + length(files);
-                            end
-                        end
-                    elseif ~isempty(startsWith(sessOrEEG, 'ses-')) && any(startsWith(sessOrEEG, 'eeg'))
-                        eegFold = [folder subject slash 'eeg' slash];
-                        if exist(eegFold, 'dir')
-                            files = dir([eegFold ,'*' ,ext]);
-                            nBlock = nBlock + length(files);
-                        end
-                    else
-                        files = dir([folder, subject ,'/*' ,ext]);
-                        nBlock = nBlock + length(files);
-                    end
-                else
-                    files = dir([folder, subject ,'/*' ,ext]);
-                    nBlock = nBlock + length(files);
-                end
-            end
-
-            % NOTE: Very risky. The assumption is that for each result 
-            % file, there is a corresponding reduced file as well.
-            if isempty(folder_counts) % Case of results folder
-                if allSteps
-                    if( nBlock / 3 ~= nBlocks)
-                        modified = true;
-                    end
-                else
-                    if( nBlock / 2 ~= nBlocks)
-                        modified = true;
-                    end
-                end
-            else
-                if(nBlock ~= nBlocks)
-                    modified = true;
-                end
-            end
         end
 
     end

@@ -85,7 +85,7 @@ end
 params = varargin{1};
 VisualisationParams = varargin{2};
 CGV = varargin{3};
-if nargin > 3
+if length(varargin) > 3
     handles.isScript = varargin{4};
 else
     handles.isScript = 0;
@@ -1225,8 +1225,9 @@ function settingsfigure_CloseRequestFcn(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
+global automagicConfig;
+
 if handles.isScript
-    global automagicConfig;
     automagicConfig = struct();
     automagicConfig.params = handles.params;
     automagicConfig.VisualisationParams = handles.VisualisationParams;

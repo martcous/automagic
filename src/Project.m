@@ -271,6 +271,13 @@ classdef Project < handle
     
     %% Public Methods
     methods
+        function params = getParams(self)
+            params = self.params;
+        end
+        function vParams = getVParams(self)
+            vParams = self.vParams;
+        end
+        
         function block = getCurrentBlock(self)
             % Return the block pointed by the current index. If 
             % current == -1, a mock block is returned.

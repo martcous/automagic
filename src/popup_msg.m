@@ -46,5 +46,7 @@ else
     msgHandle = msgbox(msgStr, title, 'modal');
 end
 msgPos = get(msgHandle,'position');
-set(msgHandle, 'position', [mainPos(3)/2 mainPos(4)/2 msgPos(3) msgPos(4)]);
+if length(mainPos) >= 4 && length(msgPos) >= 4
+    set(msgHandle, 'position', [mainPos(3)/2 mainPos(4)/2 msgPos(3) msgPos(4)]);
+end
 waitfor(msgHandle);

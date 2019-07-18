@@ -65,7 +65,7 @@ function settingsGUI_OpeningFcn(hObject, eventdata, handles, varargin)
 % handles    structure with handles and user data (see GUIDATA)
 % varargin   command line arguments to settingsGUI (see VARARGIN)
 
-if( nargin - 4 ~= 2 )
+if( nargin < 6 )
     error('wrong number of arguments. params and ds rate must be given as arguments.')
 end
 
@@ -85,6 +85,11 @@ end
 params = varargin{1};
 VisualisationParams = varargin{2};
 CGV = varargin{3};
+if nargin > 3
+    handles.isScript = varargin{4};
+else
+    handles.isScript = 0;
+end
 
 assert(isa(params, 'struct'));
 assert(isa(CGV, 'ConstantGlobalValues'));
@@ -778,9 +783,14 @@ idx = get(handles.interpolationpopupmenu, 'Value');
 methods = get(handles.interpolationpopupmenu, 'String');
 method = methods{idx};
 
-h = findobj(allchild(0), 'flat', 'Tag', 'mainGUI');
-mainGUI_handle = guidata(h);
-
+try
+    h = findobj(allchild(0), 'flat', 'Tag', 'mainGUI');
+    mainGUI_handle = guidata(h);
+    noMainEgi = ~get(mainGUI_handle.egiradio, 'Value');
+catch
+    noMainEgi = 1;
+end
+    
 % Get EOG regression
 if get(handles.eogcheckbox, 'Value')
     EOGRegressionParams = struct();
@@ -809,7 +819,7 @@ if ~get(handles.notchcheckbox, 'Value') && ~isempty(PrepParams) && ...
     EEGSystem.powerLineFreq = PrepParams.lineFrequencies;
 end
 
-if( ~get(mainGUI_handle.egiradio, 'Value') && ...
+if( noMainEgi && ...
         get(handles.eogcheckbox, 'Value') && ...
         isempty(get(handles.eogedit, 'String')))
     popup_msg(['A list of channel indices seperated by space or',...
@@ -853,9 +863,14 @@ handles.params.InterpolationParams.method = method;
 function handles = switch_components(handles)
 
 h = findobj(allchild(0), 'flat', 'Tag', 'mainGUI');
-mainGUI_handle = guidata(h);
-if(~ get(mainGUI_handle.egiradio, 'Value') && ...
-        get(handles.eogcheckbox, 'Value'))
+try
+    mainGUI_handle = guidata(h);
+    eogEdit = ~get(mainGUI_handle.egiradio, 'Value') && ...
+        get(handles.eogcheckbox, 'Value');
+catch
+    eogEdit = 1;
+end
+if eogEdit
     set(handles.eogedit, 'enable', 'on');
 else
     set(handles.eogedit, 'enable', 'off');
@@ -1210,14 +1225,21 @@ function settingsfigure_CloseRequestFcn(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-h = findobj(allchild(0), 'flat', 'Tag', 'mainGUI');
-if( isempty(h))
-    h = mainGUI;
+if handles.isScript
+    global automagicConfig;
+    automagicConfig = struct();
+    automagicConfig.params = handles.params;
+    automagicConfig.VisualisationParams = handles.VisualisationParams;
+else
+    h = findobj(allchild(0), 'flat', 'Tag', 'mainGUI');
+    if( isempty(h))
+        h = mainGUI;
+    end
+    handle = guidata(h);
+    handle.params = handles.params;
+    handle.VisualisationParams = handles.VisualisationParams;
+    guidata(handle.mainGUI, handle);
 end
-handle = guidata(h);
-handle.params = handles.params;
-handle.VisualisationParams = handles.VisualisationParams;
-guidata(handle.mainGUI, handle);
 
 delete(hObject);
 
@@ -1882,9 +1904,13 @@ function eogedit_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-h = findobj(allchild(0), 'flat', 'Tag', 'mainGUI');
-mainGUI_handle = guidata(h);
-chanIntersection = intersect(str2num(get(hObject,'String')), str2num(get(mainGUI_handle.excludeedit, 'String'))); %#ok<ST2NM>
+try
+    h = findobj(allchild(0), 'flat', 'Tag', 'mainGUI');
+    mainGUI_handle = guidata(h);
+    chanIntersection = intersect(str2num(get(hObject,'String')), str2num(get(mainGUI_handle.excludeedit, 'String'))); %#ok<ST2NM>
+catch
+    chanIntersection = 0;
+end
 if chanIntersection
     popup_msg(['Warning! Channels below are in both Excluded channels ', ...
                'and EOG Channels:' num2str(chanIntersection)], 'WARNING')
